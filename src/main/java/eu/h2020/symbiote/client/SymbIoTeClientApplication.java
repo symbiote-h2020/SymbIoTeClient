@@ -13,7 +13,7 @@ public class SymbIoTeClientApplication {
 
     private static Log log = LogFactory.getLog(SymbIoTeClientApplication.class);
 
-    @Value("${symbiote.enabler.core.interface.url}")
+    @Value("${symbIoTeCoreUrl}")
     private String symbIoTeCoreUrl;
 
     public static void main(String[] args) {

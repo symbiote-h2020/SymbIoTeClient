@@ -2,6 +2,8 @@ package eu.h2020.symbiote.client.controllers;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 
+import eu.h2020.symbiote.cloud.model.data.observation.Observation;
+import eu.h2020.symbiote.core.internal.ResourceUrlsResponse;
 import eu.h2020.symbiote.security.ClientSecurityHandlerFactory;
 import eu.h2020.symbiote.security.commons.SecurityConstants;
 import eu.h2020.symbiote.security.commons.Token;
@@ -23,6 +25,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
 import org.springframework.util.Assert;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -44,11 +47,16 @@ public class Controller {
     private String symbIoTeCoreUrl;
     private RestTemplate restTemplate;
     private ISecurityHandler securityHandler;
+    private String username;
+    private String password;
+    private String clientId;
 
     @Autowired
     public Controller(@Qualifier("symbIoTeCoreUrl") String symbIoTeCoreUrl, RestTemplate restTemplate,
-                      @Value("coreAAMAdress") String coreAAMAddress, @Value("keystorePath") String keystorePath,
-                      @Value("keystorePassword") String keystorePassword, @Value("userId") String userId)
+                      @Value("${coreAAMAddress}") String coreAAMAddress, @Value("${keystorePath}") String keystorePath,
+                      @Value("${keystorePassword}") String keystorePassword, @Value("${userId}") String userId,
+                      @Value("${demoApp.username}") String username, @Value("${demoApp.password}") String password,
+                      @Value("${clientId}") String clientId)
             throws SecurityHandlerException {
 
         Assert.notNull(symbIoTeCoreUrl,"symbIoTeCoreUrl can not be null!");
@@ -62,43 +70,69 @@ public class Controller {
         Assert.notNull(keystorePassword,"keystorePassword can not be null!");
         Assert.notNull(userId,"userId can not be null!");
 
+        Assert.notNull(username,"username can not be null!");
+        this.username = username;
+
+        Assert.notNull(password,"password can not be null!");
+        this.password = password;
+
+        Assert.notNull(clientId,"clientId can not be null!");
+        this.clientId = clientId;
+
+        log.info(symbIoTeCoreUrl);
+        log.info(coreAAMAddress);
+        log.info(keystorePath);
+        log.info(keystorePassword);
+        log.info(userId);
+        log.info(username);
+        log.info(password);
+        log.info(clientId);
+
         securityHandler = ClientSecurityHandlerFactory.getSecurityHandler(coreAAMAddress, keystorePath,
                 keystorePassword, userId);
 
     }
 
+    @CrossOrigin
     @PostMapping("/get_resource_url")
     public ResponseEntity<?> getResourceUrlFromCram(@RequestParam String resourceId) {
 
         log.info("Requesting url from CRAM for the resource with id: " + resourceId);
 
         String cramRequestUrl = symbIoTeCoreUrl + "/resourceUrls?id=" + resourceId;
-        return sendGETRequestAndVerifyResponse(cramRequestUrl, SecurityConstants.CORE_AAM_INSTANCE_ID);
+        return sendGETRequestAndVerifyResponse(cramRequestUrl, SecurityConstants.CORE_AAM_INSTANCE_ID, "cram",
+                new ParameterizedTypeReference<ResourceUrlsResponse>() {});
+
     }
 
+    @CrossOrigin
     @PostMapping("/observations")
     public ResponseEntity<?> getResourceObservationHistory(@RequestParam String resourceUrl,
                                                            @RequestParam String platformId) {
 
         log.info("Getting observations for the resource with id: " + resourceUrl);
 
-        return sendGETRequestAndVerifyResponse(resourceUrl, platformId);
+        return sendGETRequestAndVerifyResponse(resourceUrl, platformId, "rap",
+                new ParameterizedTypeReference<List<Observation>>() {});
     }
 
-    private ResponseEntity<?> sendGETRequestAndVerifyResponse(String url, String aamId) {
+    private ResponseEntity<?> sendGETRequestAndVerifyResponse(String url, String platformId, String componentId,
+                                                              ParameterizedTypeReference responseTypeRef) {
+
         Map<String, String> securityRequestHeaders;
         HttpHeaders httpHeaders = new HttpHeaders();
         httpHeaders.set("Accept", MediaType.APPLICATION_JSON_VALUE);
         httpHeaders.setContentType(MediaType.APPLICATION_JSON);
 
-        // Insert Security Request in to the headers
+        // Insert Security Request into the headers
         try {
 
             Set<AuthorizationCredentials> authorizationCredentialsSet = new HashSet<>();
             Map<String, AAM> availableAAMs = securityHandler.getAvailableAAMs();
-            Token homeToken = securityHandler.login(availableAAMs.get(aamId));
+            securityHandler.getCertificate(availableAAMs.get(platformId), username, password, clientId);
+            Token homeToken = securityHandler.login(availableAAMs.get(platformId));
 
-            HomeCredentials homeCredentials = securityHandler.getAcquiredCredentials().get(aamId).homeCredentials;
+            HomeCredentials homeCredentials = securityHandler.getAcquiredCredentials().get(platformId).homeCredentials;
             authorizationCredentialsSet.add(new AuthorizationCredentials(homeToken, homeCredentials.homeAAM, homeCredentials));
 
             SecurityRequest securityRequest = MutualAuthenticationHelper.getSecurityRequest(authorizationCredentialsSet, false);
@@ -116,19 +150,22 @@ public class Controller {
 
         HttpEntity<String> httpEntity = new HttpEntity<>(httpHeaders);
 
-        ParameterizedTypeReference<Map<String, String>> typeRef = new ParameterizedTypeReference<Map<String, String>>() {};
-        ResponseEntity<?> responseEntity = restTemplate.exchange(url, HttpMethod.GET, httpEntity, typeRef);
+        ResponseEntity<?> responseEntity = restTemplate.exchange(url, HttpMethod.GET, httpEntity, responseTypeRef);
+
+        log.info("response = " + responseEntity);
+        log.info("headers = " + responseEntity.getHeaders());
+        log.info("body = " + responseEntity.getBody());
 
         String serviceResponse = responseEntity.getHeaders().get(SecurityConstants.SECURITY_RESPONSE_HEADER).get(0);
 
         if (serviceResponse == null)
-            return new ResponseEntity<>("Service Response not present", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+            return new ResponseEntity<>("The receiver was not authenticated", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
 
 
         boolean isServiceResponseVerified;
         try {
             isServiceResponseVerified = MutualAuthenticationHelper.isServiceResponseVerified(
-                    serviceResponse, securityHandler.getAcquiredCredentials().get(aamId).homeCredentials.certificate);
+                    serviceResponse, securityHandler.getComponentCertificate(componentId, platformId));
         } catch (CertificateException | NoSuchAlgorithmException e) {
             e.printStackTrace();
             return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
