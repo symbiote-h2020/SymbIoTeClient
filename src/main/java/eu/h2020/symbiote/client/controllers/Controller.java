@@ -110,7 +110,7 @@ public class Controller {
     public ResponseEntity<?> getResourceObservationHistory(@RequestParam String resourceUrl,
                                                            @RequestParam String platformId) {
 
-        log.info("Getting observations for the resource with id: " + resourceUrl);
+        log.info("Getting observations for the resource with url: " + resourceUrl);
 
         return sendGETRequestAndVerifyResponse(resourceUrl, platformId, "rap",
                 new ParameterizedTypeReference<List<Observation>>() {});
