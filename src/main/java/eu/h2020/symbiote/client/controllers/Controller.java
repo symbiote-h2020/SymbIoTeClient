@@ -9,13 +9,18 @@ import eu.h2020.symbiote.security.commons.SecurityConstants;
 import eu.h2020.symbiote.security.commons.Token;
 import eu.h2020.symbiote.security.commons.credentials.AuthorizationCredentials;
 import eu.h2020.symbiote.security.commons.credentials.HomeCredentials;
+import eu.h2020.symbiote.security.commons.enums.ManagementStatus;
+import eu.h2020.symbiote.security.commons.enums.OperationType;
+import eu.h2020.symbiote.security.commons.enums.UserRole;
+import eu.h2020.symbiote.security.commons.exceptions.custom.AAMException;
 import eu.h2020.symbiote.security.commons.exceptions.custom.SecurityHandlerException;
 import eu.h2020.symbiote.security.commons.exceptions.custom.ValidationException;
-import eu.h2020.symbiote.security.communication.payloads.AAM;
-import eu.h2020.symbiote.security.communication.payloads.SecurityRequest;
+import eu.h2020.symbiote.security.communication.AAMClient;
+import eu.h2020.symbiote.security.communication.IAAMClient;
+import eu.h2020.symbiote.security.communication.payloads.*;
 import eu.h2020.symbiote.security.handler.ISecurityHandler;
-
 import eu.h2020.symbiote.security.helpers.MutualAuthenticationHelper;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -31,6 +36,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.util.*;
@@ -50,14 +60,17 @@ public class Controller {
     private String username;
     private String password;
     private String clientId;
+    private String paamOwnerUsername;
+    private String paamOwnerPassword;
 
     @Autowired
     public Controller(@Qualifier("symbIoTeCoreUrl") String symbIoTeCoreUrl, RestTemplate restTemplate,
                       @Value("${coreAAMAddress}") String coreAAMAddress, @Value("${keystorePath}") String keystorePath,
                       @Value("${keystorePassword}") String keystorePassword, @Value("${userId}") String userId,
                       @Value("${demoApp.username}") String username, @Value("${demoApp.password}") String password,
-                      @Value("${clientId}") String clientId)
-            throws SecurityHandlerException {
+                      @Value("${clientId}") String clientId, @Value("${paamOwner.username}") String paamOwnerUsername,
+                      @Value("${paamOwner.password}") String paamOwnerPassword)
+            throws SecurityHandlerException, NoSuchAlgorithmException {
 
         Assert.notNull(symbIoTeCoreUrl,"symbIoTeCoreUrl can not be null!");
         this.symbIoTeCoreUrl = symbIoTeCoreUrl;
@@ -79,18 +92,68 @@ public class Controller {
         Assert.notNull(clientId,"clientId can not be null!");
         this.clientId = clientId;
 
-        log.info(symbIoTeCoreUrl);
-        log.info(coreAAMAddress);
-        log.info(keystorePath);
-        log.info(keystorePassword);
-        log.info(userId);
-        log.info(username);
-        log.info(password);
-        log.info(clientId);
+        Assert.notNull(paamOwnerUsername,"paamOwnerUsername can not be null!");
+        this.paamOwnerUsername = paamOwnerUsername;
+
+        Assert.notNull(paamOwnerPassword,"paamOwnerPassword can not be null!");
+        this.paamOwnerPassword = paamOwnerPassword;
+
+        TrustManager[] trustAllCerts = new TrustManager[]{
+                new X509TrustManager() {
+                    public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                        return null;
+                    }
+
+                    public void checkClientTrusted(
+                            java.security.cert.X509Certificate[] certs, String authType) {
+                    }
+
+                    public void checkServerTrusted(
+                            java.security.cert.X509Certificate[] certs, String authType) {
+                    }
+                }
+        };
+        // Install the all-trusting trust manager
+        SSLContext sc = SSLContext.getInstance("SSL");
+        try {
+            sc.init(null, trustAllCerts, new java.security.SecureRandom());
+        } catch (KeyManagementException e) {
+            e.printStackTrace();
+        }
+        HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
 
         securityHandler = ClientSecurityHandlerFactory.getSecurityHandler(coreAAMAddress, keystorePath,
                 keystorePassword, userId);
 
+    }
+
+    @CrossOrigin
+    @PostMapping("/register_to_PAAM")
+    public ResponseEntity<?> registerToPAAM(@RequestParam String platformId) {
+        log.info("Registering to PAAM: " + platformId);
+        try {
+            Map<String, AAM> availableAAMs = securityHandler.getAvailableAAMs();
+            IAAMClient aamClient = new AAMClient(availableAAMs.get(platformId).getAamAddress());
+
+            UserManagementRequest userManagementRequest = new UserManagementRequest(new
+                    Credentials(paamOwnerUsername, paamOwnerPassword),
+                    new Credentials(username, password),
+                    new UserDetails(new Credentials(username, password), "", "icom@icom.com",
+                            UserRole.USER, new HashMap<>(), new HashMap<>()),
+                    OperationType.CREATE);
+
+            try {
+                aamClient.manageUser(userManagementRequest);
+                log.info("User registration done");
+            } catch (AAMException e) {
+                log.error(e);
+                return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+        } catch (SecurityHandlerException e) {
+            e.printStackTrace();
+            return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+        return new ResponseEntity<>(ManagementStatus.OK, new HttpHeaders(), HttpStatus.OK);
     }
 
     @CrossOrigin
@@ -100,8 +163,7 @@ public class Controller {
         log.info("Requesting url from CRAM for the resource with id: " + resourceId);
 
         String cramRequestUrl = symbIoTeCoreUrl + "/resourceUrls?id=" + resourceId;
-        return sendGETRequestAndVerifyResponse(cramRequestUrl, SecurityConstants.CORE_AAM_INSTANCE_ID, "cram",
-                new ParameterizedTypeReference<ResourceUrlsResponse>() {});
+        return sendGETRequestAndVerifyResponse(cramRequestUrl, SecurityConstants.CORE_AAM_INSTANCE_ID, "cram");
 
     }
 
@@ -112,12 +174,10 @@ public class Controller {
 
         log.info("Getting observations for the resource with url: " + resourceUrl);
 
-        return sendGETRequestAndVerifyResponse(resourceUrl, platformId, "rap",
-                new ParameterizedTypeReference<List<Observation>>() {});
+        return sendGETRequestAndVerifyResponse(resourceUrl, platformId, "rap");
     }
 
-    private ResponseEntity<?> sendGETRequestAndVerifyResponse(String url, String platformId, String componentId,
-                                                              ParameterizedTypeReference responseTypeRef) {
+    private ResponseEntity<?> sendGETRequestAndVerifyResponse(String url, String platformId, String componentId) {
 
         Map<String, String> securityRequestHeaders;
         HttpHeaders httpHeaders = new HttpHeaders();
@@ -129,7 +189,11 @@ public class Controller {
 
             Set<AuthorizationCredentials> authorizationCredentialsSet = new HashSet<>();
             Map<String, AAM> availableAAMs = securityHandler.getAvailableAAMs();
+
+            log.info("Getting certificate for " + availableAAMs.get(platformId).getAamInstanceId());
             securityHandler.getCertificate(availableAAMs.get(platformId), username, password, clientId);
+
+            log.info("Getting token from " + availableAAMs.get(platformId).getAamInstanceId());
             Token homeToken = securityHandler.login(availableAAMs.get(platformId));
 
             HomeCredentials homeCredentials = securityHandler.getAcquiredCredentials().get(platformId).homeCredentials;
@@ -147,10 +211,13 @@ public class Controller {
         for (Map.Entry<String, String> entry : securityRequestHeaders.entrySet()) {
             httpHeaders.add(entry.getKey(), entry.getValue());
         }
+        log.info(httpHeaders);
 
         HttpEntity<String> httpEntity = new HttpEntity<>(httpHeaders);
 
-        ResponseEntity<?> responseEntity = restTemplate.exchange(url, HttpMethod.GET, httpEntity, responseTypeRef);
+        ResponseEntity<?> responseEntity = restTemplate.exchange(url, HttpMethod.GET, httpEntity, Object.class);
+//        ResponseEntity<?> responseEntity = restTemplate.exchange("https://symbiote.tel.fer.hr/rap/Sensor/59c374a037f6de49cc1be554/history",
+//                HttpMethod.GET, httpEntity, Object.class);
 
         log.info("response = " + responseEntity);
         log.info("headers = " + responseEntity.getHeaders());
