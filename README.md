@@ -34,7 +34,7 @@ resourceUrl=https://{platform_interworking_interface_url}/rap/Sensors('resourceI
           proxy_set_header        X-Forwarded-For $proxy_add_x_forwarded_for;
           proxy_set_header        X-Forwarded-Proto $scheme;
   
-          proxy_pass http://localhost:{aam port}/; ## NOTE: This should match the PAAM port in the CloudConfigProperties
+          proxy_pass https://localhost:{aam port}/; ## NOTE: This should match the PAAM port in the CloudConfigProperties
         }
 ```
 You have to put there the port that your PAAM listens to. Slashes are important here, so make sure that you do not miss anyone.
