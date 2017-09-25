@@ -2,8 +2,6 @@ package eu.h2020.symbiote.client.controllers;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 
-import eu.h2020.symbiote.cloud.model.data.observation.Observation;
-import eu.h2020.symbiote.core.internal.ResourceUrlsResponse;
 import eu.h2020.symbiote.security.ClientSecurityHandlerFactory;
 import eu.h2020.symbiote.security.commons.SecurityConstants;
 import eu.h2020.symbiote.security.commons.Token;
@@ -27,7 +25,6 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
 import org.springframework.util.Assert;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -177,6 +174,105 @@ public class Controller {
         return sendGETRequestAndVerifyResponse(resourceUrl, platformId, "rap");
     }
 
+    @CrossOrigin
+    @PostMapping("/observations_with_home_token")
+    public ResponseEntity<?> getResourceObservationHistoryWithHomeToken(@RequestParam String resourceUrl,
+                                                           @RequestParam String platformId) {
+
+        log.info("Getting observations for the resource with url: " + resourceUrl + " by using a HOME token");
+
+        return sendGETRequestAndVerifyResponse(resourceUrl, platformId, "rap");
+    }
+
+    @CrossOrigin
+    @PostMapping("/observations_with_foreign_token")
+    public ResponseEntity<?> getResourceObservationHistoryWithForeignToken(@RequestParam String resourceUrl,
+                                                                        @RequestParam String platformId) {
+
+        log.info("Getting observations for the resource with url: " + resourceUrl + " by using a Foreign token");
+
+        Map<String, String> securityRequestHeaders;
+        HttpHeaders httpHeaders = new HttpHeaders();
+        httpHeaders.set("Accept", MediaType.APPLICATION_JSON_VALUE);
+        httpHeaders.setContentType(MediaType.APPLICATION_JSON);
+
+        AAM coreAAM = securityHandler.getCoreAAMInstance();
+
+        // Insert Security Request into the headers
+        try {
+
+            Set<AuthorizationCredentials> authorizationCredentialsSet = new HashSet<>();
+            Map<String, AAM> availableAAMs = securityHandler.getAvailableAAMs();
+
+            log.info("Getting certificate for " + availableAAMs.get(platformId).getAamInstanceId());
+            securityHandler.getCertificate(availableAAMs.get(platformId), username, password, clientId);
+
+            log.info("Getting token from " + availableAAMs.get(platformId).getAamInstanceId());
+            Token homeToken = securityHandler.login(availableAAMs.get(platformId));
+
+            // Get foreign token from core aam using Home Token
+            List<AAM> aamList = new ArrayList<>();
+            aamList.add(coreAAM);
+
+            log.info("Attempting to acquire FOREIGN token from Core AAM");
+            Map<AAM, Token> foreignTokens;
+            try {
+                foreignTokens = securityHandler.login(aamList, homeToken.toString());
+                log.info("Foreign token acquired");
+            } catch (SecurityHandlerException | NullPointerException e) {
+                log.error("Failed to acquire foreign token");
+                return new ResponseEntity<>("Failed to acquire foreign token", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+
+
+            HomeCredentials homeCredentials = securityHandler.getAcquiredCredentials().get(platformId).homeCredentials;
+            authorizationCredentialsSet.add(new AuthorizationCredentials(foreignTokens.get(coreAAM), coreAAM, homeCredentials));
+
+            SecurityRequest federatedSecurityRequest = MutualAuthenticationHelper.getSecurityRequest(authorizationCredentialsSet, false);
+            securityRequestHeaders = federatedSecurityRequest.getSecurityRequestHeaderParams();
+
+        } catch (SecurityHandlerException | ValidationException | JsonProcessingException | NoSuchAlgorithmException e) {
+            e.printStackTrace();
+            return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+
+        for (Map.Entry<String, String> entry : securityRequestHeaders.entrySet()) {
+            httpHeaders.add(entry.getKey(), entry.getValue());
+        }
+        log.info("request headers: " + httpHeaders);
+
+        HttpEntity<String> httpEntity = new HttpEntity<>(httpHeaders);
+
+        ResponseEntity<?> responseEntity = restTemplate.exchange(resourceUrl, HttpMethod.GET, httpEntity, Object.class);
+
+        log.info("response = " + responseEntity);
+        log.info("headers = " + responseEntity.getHeaders());
+        log.info("body = " + responseEntity.getBody());
+
+        String serviceResponse = responseEntity.getHeaders().get(SecurityConstants.SECURITY_RESPONSE_HEADER).get(0);
+
+        if (serviceResponse == null)
+            return new ResponseEntity<>("The receiver was not authenticated", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+
+
+        boolean isServiceResponseVerified;
+        try {
+            isServiceResponseVerified = MutualAuthenticationHelper.isServiceResponseVerified(
+                    serviceResponse, securityHandler.getComponentCertificate("rap", platformId));
+        } catch (CertificateException | NoSuchAlgorithmException e) {
+            e.printStackTrace();
+            return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+        if (isServiceResponseVerified) {
+            return new ResponseEntity<>(responseEntity.getBody(), new HttpHeaders(), responseEntity.getStatusCode());
+        } else {
+            return new ResponseEntity<>("The service response is not verified", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+    }
+
     private ResponseEntity<?> sendGETRequestAndVerifyResponse(String url, String platformId, String componentId) {
 
         Map<String, String> securityRequestHeaders;
@@ -211,13 +307,11 @@ public class Controller {
         for (Map.Entry<String, String> entry : securityRequestHeaders.entrySet()) {
             httpHeaders.add(entry.getKey(), entry.getValue());
         }
-        log.info(httpHeaders);
+        log.info("request headers: " + httpHeaders);
 
         HttpEntity<String> httpEntity = new HttpEntity<>(httpHeaders);
 
         ResponseEntity<?> responseEntity = restTemplate.exchange(url, HttpMethod.GET, httpEntity, Object.class);
-//        ResponseEntity<?> responseEntity = restTemplate.exchange("https://symbiote.tel.fer.hr/rap/Sensor/59c374a037f6de49cc1be554/history",
-//                HttpMethod.GET, httpEntity, Object.class);
 
         log.info("response = " + responseEntity);
         log.info("headers = " + responseEntity.getHeaders());
