@@ -187,7 +187,8 @@ public class Controller {
     @CrossOrigin
     @PostMapping("/observations_with_foreign_token")
     public ResponseEntity<?> getResourceObservationHistoryWithForeignToken(@RequestParam String resourceUrl,
-                                                                        @RequestParam String platformId) {
+                                                                           @RequestParam String homePlatformId,
+                                                                           @RequestParam String federatedPlatformId) {
 
         log.info("Getting observations for the resource with url: " + resourceUrl + " by using a Foreign token");
 
@@ -204,11 +205,11 @@ public class Controller {
             Set<AuthorizationCredentials> authorizationCredentialsSet = new HashSet<>();
             Map<String, AAM> availableAAMs = securityHandler.getAvailableAAMs();
 
-            log.info("Getting certificate for " + availableAAMs.get(platformId).getAamInstanceId());
-            securityHandler.getCertificate(availableAAMs.get(platformId), username, password, clientId);
+            log.info("Getting certificate for " + availableAAMs.get(homePlatformId).getAamInstanceId());
+            securityHandler.getCertificate(availableAAMs.get(homePlatformId), username, password, clientId);
 
-            log.info("Getting token from " + availableAAMs.get(platformId).getAamInstanceId());
-            Token homeToken = securityHandler.login(availableAAMs.get(platformId));
+            log.info("Getting token from " + availableAAMs.get(homePlatformId).getAamInstanceId());
+            Token homeToken = securityHandler.login(availableAAMs.get(homePlatformId));
 
             // Get foreign token from core aam using Home Token
             List<AAM> aamList = new ArrayList<>();
@@ -225,7 +226,7 @@ public class Controller {
             }
 
 
-            HomeCredentials homeCredentials = securityHandler.getAcquiredCredentials().get(platformId).homeCredentials;
+            HomeCredentials homeCredentials = securityHandler.getAcquiredCredentials().get(homePlatformId).homeCredentials;
             authorizationCredentialsSet.add(new AuthorizationCredentials(foreignTokens.get(coreAAM), coreAAM, homeCredentials));
 
             SecurityRequest federatedSecurityRequest = MutualAuthenticationHelper.getSecurityRequest(authorizationCredentialsSet, false);
@@ -259,7 +260,7 @@ public class Controller {
         boolean isServiceResponseVerified;
         try {
             isServiceResponseVerified = MutualAuthenticationHelper.isServiceResponseVerified(
-                    serviceResponse, securityHandler.getComponentCertificate("rap", platformId));
+                    serviceResponse, securityHandler.getComponentCertificate("rap", federatedPlatformId));
         } catch (CertificateException | NoSuchAlgorithmException e) {
             e.printStackTrace();
             return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
