@@ -41,6 +41,7 @@ import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.util.*;
+import org.springframework.web.bind.annotation.RequestBody;
 
 /**
  * @author Vasileios Glykantzis (ICOM)
@@ -172,6 +173,17 @@ public class Controller {
         log.info("Getting observations for the resource with url: " + resourceUrl);
 
         return sendGETRequestAndVerifyResponse(resourceUrl, platformId, "rap");
+    }
+    
+    
+    @CrossOrigin
+    @PostMapping("/set")
+    public ResponseEntity<?> setResource(@RequestParam String resourceUrl,
+            @RequestParam String platformId, @RequestBody String body ) {
+
+        log.info("Getting observations for the resource with url: " + resourceUrl);
+
+        return sendSETRequestAndVerifyResponse(resourceUrl, platformId, body, "rap");
     }
 
     @CrossOrigin
@@ -312,7 +324,86 @@ public class Controller {
 
         HttpEntity<String> httpEntity = new HttpEntity<>(httpHeaders);
 
-        ResponseEntity<?> responseEntity = restTemplate.exchange(url, HttpMethod.GET, httpEntity, Object.class);
+        ResponseEntity<?> responseEntity = null;
+        try{
+            responseEntity = restTemplate.exchange(url, HttpMethod.GET, httpEntity, Object.class);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+        log.info("response = " + responseEntity);
+        log.info("headers = " + responseEntity.getHeaders());
+        log.info("body = " + responseEntity.getBody());
+
+        String serviceResponse = responseEntity.getHeaders().get(SecurityConstants.SECURITY_RESPONSE_HEADER).get(0);
+
+        if (serviceResponse == null)
+            return new ResponseEntity<>("The receiver was not authenticated", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+
+
+        boolean isServiceResponseVerified;
+        try {
+            isServiceResponseVerified = MutualAuthenticationHelper.isServiceResponseVerified(
+                    serviceResponse, securityHandler.getComponentCertificate(componentId, platformId));
+        } catch (CertificateException | NoSuchAlgorithmException e) {
+            e.printStackTrace();
+            return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+        if (isServiceResponseVerified) {
+            return new ResponseEntity<>(responseEntity.getBody(), new HttpHeaders(), responseEntity.getStatusCode());
+        } else {
+            return new ResponseEntity<>("The service response is not verified", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+    
+    
+    private ResponseEntity<?> sendSETRequestAndVerifyResponse(String url, String platformId, String body, String componentId) {
+
+        Map<String, String> securityRequestHeaders;
+        HttpHeaders httpHeaders = new HttpHeaders();
+        httpHeaders.set("Accept", MediaType.APPLICATION_JSON_VALUE);
+        httpHeaders.setContentType(MediaType.APPLICATION_JSON);
+
+        // Insert Security Request into the headers
+        try {
+
+            Set<AuthorizationCredentials> authorizationCredentialsSet = new HashSet<>();
+            Map<String, AAM> availableAAMs = securityHandler.getAvailableAAMs();
+
+            log.info("Getting certificate for " + availableAAMs.get(platformId).getAamInstanceId());
+            securityHandler.getCertificate(availableAAMs.get(platformId), username, password, clientId);
+
+            log.info("Getting token from " + availableAAMs.get(platformId).getAamInstanceId());
+            Token homeToken = securityHandler.login(availableAAMs.get(platformId));
+
+            HomeCredentials homeCredentials = securityHandler.getAcquiredCredentials().get(platformId).homeCredentials;
+            authorizationCredentialsSet.add(new AuthorizationCredentials(homeToken, homeCredentials.homeAAM, homeCredentials));
+
+            SecurityRequest securityRequest = MutualAuthenticationHelper.getSecurityRequest(authorizationCredentialsSet, false);
+            securityRequestHeaders = securityRequest.getSecurityRequestHeaderParams();
+
+        } catch (SecurityHandlerException | ValidationException | JsonProcessingException | NoSuchAlgorithmException e) {
+            e.printStackTrace();
+            return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+
+        for (Map.Entry<String, String> entry : securityRequestHeaders.entrySet()) {
+            httpHeaders.add(entry.getKey(), entry.getValue());
+        }
+        log.info("request headers: " + httpHeaders);
+
+        HttpEntity<String> httpEntity = new HttpEntity<>(body,httpHeaders);
+
+        ResponseEntity<?> responseEntity = null;
+        try{
+            responseEntity = restTemplate.exchange(url, HttpMethod.PUT, httpEntity, Object.class);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
 
         log.info("response = " + responseEntity);
         log.info("headers = " + responseEntity.getHeaders());
