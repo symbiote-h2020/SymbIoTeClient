@@ -77,9 +77,6 @@ dependencies {
     */
 
     compile('com.github.symbiote-h2020:SymbIoTeLibraries:3.+') { changing = true }
-    // compile('com.github.symbiote-h2020:SymbIoTeLibraries:0.2.0')
-    // compile('com.github.symbiote-h2020:SymbIoTeLibraries:919a581f854d4322b9a6956144c3517f5ffdf4fc')
-    compile('com.github.symbiote-h2020:SymbIoTeSecurity:22.+') { changing = true }
 
     // Spring
     compile('org.springframework.boot:spring-boot-starter-data-rest')
@@ -87,7 +84,6 @@ dependencies {
     // Test only
     testCompile('junit:junit:4.12')
     testCompile('org.springframework.boot:spring-boot-starter-test')
-
 }
 
 // code quality below
