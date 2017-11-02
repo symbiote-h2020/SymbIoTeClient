@@ -2,6 +2,9 @@ package eu.h2020.symbiote.client.controllers;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import eu.h2020.symbiote.core.ci.SparqlQueryRequest;
+import eu.h2020.symbiote.core.internal.CoreQueryRequest;
 import eu.h2020.symbiote.security.ClientSecurityHandlerFactory;
 import eu.h2020.symbiote.security.commons.SecurityConstants;
 import eu.h2020.symbiote.security.commons.Token;
@@ -27,10 +30,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.util.Assert;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
 import javax.net.ssl.HttpsURLConnection;
@@ -41,7 +41,6 @@ import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.util.*;
-import org.springframework.web.bind.annotation.RequestBody;
 
 /**
  * @author Vasileios Glykantzis (ICOM)
@@ -155,6 +154,71 @@ public class Controller {
     }
 
     @CrossOrigin
+    @GetMapping("/query")
+    public ResponseEntity<?> query(@RequestParam(value = "platform_id", required = false) String platformId,
+                                   @RequestParam(value = "platform_name", required = false) String platformName,
+                                   @RequestParam(value = "owner", required = false) String owner,
+                                   @RequestParam(value = "name", required = false) String name,
+                                   @RequestParam(value = "id", required = false) String id,
+                                   @RequestParam(value = "description", required = false) String description,
+                                   @RequestParam(value = "location_name", required = false) String location_name,
+                                   @RequestParam(value = "location_lat", required = false) Double location_lat,
+                                   @RequestParam(value = "location_long", required = false) Double location_long,
+                                   @RequestParam(value = "max_distance", required = false) Integer max_distance,
+                                   @RequestParam(value = "observed_property", required = false) String[] observed_property,
+                                   @RequestParam(value = "resource_type", required = false) String resource_type,
+                                   @RequestParam(value = "should_rank", required = false) Boolean should_rank,
+                                   @RequestParam String homePlatformId) {
+
+        log.info("Searching for resources with token from platform " + homePlatformId);
+
+        CoreQueryRequest queryRequest = new CoreQueryRequest();
+        queryRequest.setPlatform_id(platformId);
+        queryRequest.setPlatform_name(platformName);
+        queryRequest.setOwner(owner);
+        queryRequest.setName(name);
+        queryRequest.setId(id);
+        queryRequest.setDescription(description);
+        queryRequest.setLocation_name(location_name);
+        queryRequest.setLocation_lat(location_lat);
+        queryRequest.setLocation_long(location_long);
+        queryRequest.setMax_distance(max_distance);
+        queryRequest.setResource_type(resource_type);
+        queryRequest.setShould_rank(should_rank);
+
+        if (observed_property != null) {
+            queryRequest.setObserved_property(Arrays.asList(observed_property));
+        }
+
+        String queryUrl = queryRequest.buildQuery(symbIoTeCoreUrl);
+        log.info("queryUrl = " + queryUrl);
+
+        return sendRequestAndVerifyResponse(HttpMethod.GET, queryUrl, homePlatformId,
+                SecurityConstants.CORE_AAM_INSTANCE_ID, "search");
+
+    }
+
+    @CrossOrigin
+    @PostMapping("/sparqlQuery")
+    public ResponseEntity<?> sparqlQuery(@RequestBody SparqlQueryRequest sparqlQuery,
+                                         @RequestParam String homePlatformId) {
+
+        log.info("SPARQL query for resources with token from platform " + homePlatformId);
+
+        ObjectMapper mapper = new ObjectMapper();
+
+        try {
+            String sparqlQueryRequestAsString = mapper.writeValueAsString(sparqlQuery);
+            String url = symbIoTeCoreUrl + "/sparqlQuery";
+            return sendSETRequestAndVerifyResponse(HttpMethod.POST, url, homePlatformId, SecurityConstants.CORE_AAM_INSTANCE_ID,
+                    sparqlQueryRequestAsString, "search");
+        } catch (JsonProcessingException e) {
+            e.printStackTrace();
+            return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    @CrossOrigin
     @PostMapping("/get_resource_url")
     public ResponseEntity<?> getResourceUrlFromCram(@RequestParam String resourceId,
                                                     @RequestParam String platformId) {
@@ -163,7 +227,7 @@ public class Controller {
                 " with token from platform" + platformId);
 
         String cramRequestUrl = symbIoTeCoreUrl + "/resourceUrls?id=" + resourceId;
-        return sendGETRequestAndVerifyResponse(HttpMethod.GET, cramRequestUrl, platformId,
+        return sendRequestAndVerifyResponse(HttpMethod.GET, cramRequestUrl, platformId,
                 SecurityConstants.CORE_AAM_INSTANCE_ID, "cram");
 
     }
@@ -176,7 +240,7 @@ public class Controller {
         log.info("Getting observations for the resource with url " + resourceUrl +
                 " and platformId " + platformId);
 
-        return sendGETRequestAndVerifyResponse(HttpMethod.GET, resourceUrl, platformId, platformId,"rap");
+        return sendRequestAndVerifyResponse(HttpMethod.GET, resourceUrl, platformId, platformId,"rap");
     }
     
     
@@ -188,7 +252,7 @@ public class Controller {
 
         log.info("Getting observations for the resource with url " + resourceUrl +
                 " and platformId " + platformId);
-        return sendSETRequestAndVerifyResponse(resourceUrl, platformId, body, "rap");
+        return sendSETRequestAndVerifyResponse(HttpMethod.PUT, resourceUrl, platformId, platformId, body, "rap");
     }
 
     @CrossOrigin
@@ -198,7 +262,7 @@ public class Controller {
 
         log.info("Getting observations for the resource with url " + resourceUrl +
                 " and platformId " + platformId);
-        return sendGETRequestAndVerifyResponse(HttpMethod.GET, resourceUrl, platformId, platformId, "rap");
+        return sendRequestAndVerifyResponse(HttpMethod.GET, resourceUrl, platformId, platformId, "rap");
     }
 
     @CrossOrigin
@@ -208,11 +272,12 @@ public class Controller {
                                                                            @RequestParam String federatedPlatformId) {
 
         log.info("Getting observations for the resource with url: " + resourceUrl + " by using a Foreign token");
-        return sendGETRequestAndVerifyResponse(HttpMethod.GET, resourceUrl, homePlatformId, federatedPlatformId, "rap");
+        return sendRequestAndVerifyResponse(HttpMethod.GET, resourceUrl, homePlatformId, federatedPlatformId, "rap");
     }
 
-    private ResponseEntity<?> sendGETRequestAndVerifyResponse(HttpMethod httpMethod, String url, String homePlatformId,
-                                                              String targetPlatformId, String componentId) {
+
+    private ResponseEntity<?> sendRequestAndVerifyResponse(HttpMethod httpMethod, String url, String homePlatformId,
+                                                           String targetPlatformId, String componentId) {
 
         Map<String, String> securityRequestHeaders;
         HttpHeaders httpHeaders = new HttpHeaders();
@@ -285,7 +350,8 @@ public class Controller {
     }
     
     
-    private ResponseEntity<?> sendSETRequestAndVerifyResponse(String url, String platformId, String body, String componentId) {
+    private ResponseEntity<?> sendSETRequestAndVerifyResponse(HttpMethod httpMethod, String url, String homePlatformId,
+                                                              String targetPlatformId, String body, String componentId) {
 
         Map<String, String> securityRequestHeaders;
         HttpHeaders httpHeaders = new HttpHeaders();
@@ -298,13 +364,13 @@ public class Controller {
             Set<AuthorizationCredentials> authorizationCredentialsSet = new HashSet<>();
             Map<String, AAM> availableAAMs = securityHandler.getAvailableAAMs();
 
-            log.info("Getting certificate for " + availableAAMs.get(platformId).getAamInstanceId());
-            securityHandler.getCertificate(availableAAMs.get(platformId), username, password, clientId);
+            log.info("Getting certificate for " + availableAAMs.get(homePlatformId).getAamInstanceId());
+            securityHandler.getCertificate(availableAAMs.get(homePlatformId), username, password, clientId);
 
-            log.info("Getting token from " + availableAAMs.get(platformId).getAamInstanceId());
-            Token homeToken = securityHandler.login(availableAAMs.get(platformId));
+            log.info("Getting token from " + availableAAMs.get(homePlatformId).getAamInstanceId());
+            Token homeToken = securityHandler.login(availableAAMs.get(homePlatformId));
 
-            HomeCredentials homeCredentials = securityHandler.getAcquiredCredentials().get(platformId).homeCredentials;
+            HomeCredentials homeCredentials = securityHandler.getAcquiredCredentials().get(homePlatformId).homeCredentials;
             authorizationCredentialsSet.add(new AuthorizationCredentials(homeToken, homeCredentials.homeAAM, homeCredentials));
 
             SecurityRequest securityRequest = MutualAuthenticationHelper.getSecurityRequest(authorizationCredentialsSet, false);
@@ -325,7 +391,7 @@ public class Controller {
 
         ResponseEntity<?> responseEntity = null;
         try{
-            responseEntity = restTemplate.exchange(url, HttpMethod.PUT, httpEntity, Object.class);
+            responseEntity = restTemplate.exchange(url, httpMethod, httpEntity, Object.class);
         } catch (Exception e) {
             e.printStackTrace();
             return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
@@ -344,7 +410,7 @@ public class Controller {
         boolean isServiceResponseVerified;
         try {
             isServiceResponseVerified = MutualAuthenticationHelper.isServiceResponseVerified(
-                    serviceResponse, securityHandler.getComponentCertificate(componentId, platformId));
+                    serviceResponse, securityHandler.getComponentCertificate(componentId, targetPlatformId));
         } catch (CertificateException | NoSuchAlgorithmException e) {
             e.printStackTrace();
             return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
