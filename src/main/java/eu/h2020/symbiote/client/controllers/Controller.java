@@ -3,6 +3,7 @@ package eu.h2020.symbiote.client.controllers;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import eu.h2020.symbiote.client.model.SparqlQueryRequestWrapper;
 import eu.h2020.symbiote.core.ci.SparqlQueryRequest;
 import eu.h2020.symbiote.core.internal.CoreQueryRequest;
 import eu.h2020.symbiote.security.ClientSecurityHandlerFactory;
@@ -200,18 +201,24 @@ public class Controller {
 
     @CrossOrigin
     @PostMapping("/sparqlQuery")
-    public ResponseEntity<?> sparqlQuery(@RequestBody SparqlQueryRequest sparqlQuery,
-                                         @RequestParam String homePlatformId) {
+    public ResponseEntity<?> sparqlQuery(@RequestBody SparqlQueryRequestWrapper sparqlQueryRequestWrapper) {
 
-        log.info("SPARQL query for resources with token from platform " + homePlatformId);
+        log.info("SPARQL query request " + sparqlQueryRequestWrapper);
 
         ObjectMapper mapper = new ObjectMapper();
 
         try {
-            String sparqlQueryRequestAsString = mapper.writeValueAsString(sparqlQuery);
+
+            if (sparqlQueryRequestWrapper.getSparqlQueryRequest() == null)
+                return new ResponseEntity<>("sparqlQueryRequestWrapper should not be null", new HttpHeaders(), HttpStatus.BAD_REQUEST);
+            if (sparqlQueryRequestWrapper.getHomePlatformId() == null)
+                return new ResponseEntity<>("homePlatformId should not be null", new HttpHeaders(), HttpStatus.BAD_REQUEST);
+
+            String sparqlQueryRequestAsString = mapper.writeValueAsString(sparqlQueryRequestWrapper.getSparqlQueryRequest());
             String url = symbIoTeCoreUrl + "/sparqlQuery";
-            return sendSETRequestAndVerifyResponse(HttpMethod.POST, url, homePlatformId, SecurityConstants.CORE_AAM_INSTANCE_ID,
-                    sparqlQueryRequestAsString, "search");
+
+            return sendSETRequestAndVerifyResponse(HttpMethod.POST, url, sparqlQueryRequestWrapper.getHomePlatformId(),
+                    SecurityConstants.CORE_AAM_INSTANCE_ID, sparqlQueryRequestAsString, "search");
         } catch (JsonProcessingException e) {
             e.printStackTrace();
             return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.BAD_REQUEST);
