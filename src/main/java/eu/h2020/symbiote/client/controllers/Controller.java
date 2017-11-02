@@ -156,12 +156,15 @@ public class Controller {
 
     @CrossOrigin
     @PostMapping("/get_resource_url")
-    public ResponseEntity<?> getResourceUrlFromCram(@RequestParam String resourceId) {
+    public ResponseEntity<?> getResourceUrlFromCram(@RequestParam String resourceId,
+                                                    @RequestParam String platformId) {
 
-        log.info("Requesting url from CRAM for the resource with id: " + resourceId);
+        log.info("Requesting url from CRAM for the resource with id " + resourceId +
+                " with token from platform" + platformId);
 
         String cramRequestUrl = symbIoTeCoreUrl + "/resourceUrls?id=" + resourceId;
-        return sendGETRequestAndVerifyResponse(cramRequestUrl, SecurityConstants.CORE_AAM_INSTANCE_ID, "cram");
+        return sendGETRequestAndVerifyResponse(HttpMethod.GET, cramRequestUrl, platformId,
+                SecurityConstants.CORE_AAM_INSTANCE_ID, "cram");
 
     }
 
@@ -170,30 +173,32 @@ public class Controller {
     public ResponseEntity<?> getResourceObservationHistory(@RequestParam String resourceUrl,
                                                            @RequestParam String platformId) {
 
-        log.info("Getting observations for the resource with url: " + resourceUrl);
+        log.info("Getting observations for the resource with url " + resourceUrl +
+                " and platformId " + platformId);
 
-        return sendGETRequestAndVerifyResponse(resourceUrl, platformId, "rap");
+        return sendGETRequestAndVerifyResponse(HttpMethod.GET, resourceUrl, platformId, platformId,"rap");
     }
     
     
     @CrossOrigin
     @PostMapping("/set")
     public ResponseEntity<?> setResource(@RequestParam String resourceUrl,
-            @RequestParam String platformId, @RequestBody String body ) {
+                                         @RequestParam String platformId,
+                                         @RequestBody String body ) {
 
-        log.info("Getting observations for the resource with url: " + resourceUrl);
-
+        log.info("Getting observations for the resource with url " + resourceUrl +
+                " and platformId " + platformId);
         return sendSETRequestAndVerifyResponse(resourceUrl, platformId, body, "rap");
     }
 
     @CrossOrigin
     @PostMapping("/observations_with_home_token")
     public ResponseEntity<?> getResourceObservationHistoryWithHomeToken(@RequestParam String resourceUrl,
-                                                           @RequestParam String platformId) {
+                                                                        @RequestParam String platformId) {
 
-        log.info("Getting observations for the resource with url: " + resourceUrl + " by using a HOME token");
-
-        return sendGETRequestAndVerifyResponse(resourceUrl, platformId, "rap");
+        log.info("Getting observations for the resource with url " + resourceUrl +
+                " and platformId " + platformId);
+        return sendGETRequestAndVerifyResponse(HttpMethod.GET, resourceUrl, platformId, platformId, "rap");
     }
 
     @CrossOrigin
@@ -203,13 +208,16 @@ public class Controller {
                                                                            @RequestParam String federatedPlatformId) {
 
         log.info("Getting observations for the resource with url: " + resourceUrl + " by using a Foreign token");
+        return sendGETRequestAndVerifyResponse(HttpMethod.GET, resourceUrl, homePlatformId, federatedPlatformId, "rap");
+    }
+
+    private ResponseEntity<?> sendGETRequestAndVerifyResponse(HttpMethod httpMethod, String url, String homePlatformId,
+                                                              String targetPlatformId, String componentId) {
 
         Map<String, String> securityRequestHeaders;
         HttpHeaders httpHeaders = new HttpHeaders();
         httpHeaders.set("Accept", MediaType.APPLICATION_JSON_VALUE);
         httpHeaders.setContentType(MediaType.APPLICATION_JSON);
-
-        AAM coreAAM = securityHandler.getCoreAAMInstance();
 
         // Insert Security Request into the headers
         try {
@@ -223,89 +231,7 @@ public class Controller {
             log.info("Getting token from " + availableAAMs.get(homePlatformId).getAamInstanceId());
             Token homeToken = securityHandler.login(availableAAMs.get(homePlatformId));
 
-            // Get foreign token from core aam using Home Token
-            List<AAM> aamList = new ArrayList<>();
-            aamList.add(coreAAM);
-
-            log.info("Attempting to acquire FOREIGN token from Core AAM");
-            Map<AAM, Token> foreignTokens;
-            try {
-                foreignTokens = securityHandler.login(aamList, homeToken.toString());
-                log.info("Foreign token acquired");
-            } catch (SecurityHandlerException | NullPointerException e) {
-                log.error("Failed to acquire foreign token");
-                return new ResponseEntity<>("Failed to acquire foreign token", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
-            }
-
-
             HomeCredentials homeCredentials = securityHandler.getAcquiredCredentials().get(homePlatformId).homeCredentials;
-            authorizationCredentialsSet.add(new AuthorizationCredentials(foreignTokens.get(coreAAM), coreAAM, homeCredentials));
-
-            SecurityRequest federatedSecurityRequest = MutualAuthenticationHelper.getSecurityRequest(authorizationCredentialsSet, false);
-            securityRequestHeaders = federatedSecurityRequest.getSecurityRequestHeaderParams();
-
-        } catch (SecurityHandlerException | ValidationException | JsonProcessingException | NoSuchAlgorithmException e) {
-            e.printStackTrace();
-            return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
-        }
-
-
-        for (Map.Entry<String, String> entry : securityRequestHeaders.entrySet()) {
-            httpHeaders.add(entry.getKey(), entry.getValue());
-        }
-        log.info("request headers: " + httpHeaders);
-
-        HttpEntity<String> httpEntity = new HttpEntity<>(httpHeaders);
-
-        ResponseEntity<?> responseEntity = restTemplate.exchange(resourceUrl, HttpMethod.GET, httpEntity, Object.class);
-
-        log.info("response = " + responseEntity);
-        log.info("headers = " + responseEntity.getHeaders());
-        log.info("body = " + responseEntity.getBody());
-
-        String serviceResponse = responseEntity.getHeaders().get(SecurityConstants.SECURITY_RESPONSE_HEADER).get(0);
-
-        if (serviceResponse == null)
-            return new ResponseEntity<>("The receiver was not authenticated", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
-
-
-        boolean isServiceResponseVerified;
-        try {
-            isServiceResponseVerified = MutualAuthenticationHelper.isServiceResponseVerified(
-                    serviceResponse, securityHandler.getComponentCertificate("rap", federatedPlatformId));
-        } catch (CertificateException | NoSuchAlgorithmException e) {
-            e.printStackTrace();
-            return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
-        }
-
-        if (isServiceResponseVerified) {
-            return new ResponseEntity<>(responseEntity.getBody(), new HttpHeaders(), responseEntity.getStatusCode());
-        } else {
-            return new ResponseEntity<>("The service response is not verified", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
-        }
-
-    }
-
-    private ResponseEntity<?> sendGETRequestAndVerifyResponse(String url, String platformId, String componentId) {
-
-        Map<String, String> securityRequestHeaders;
-        HttpHeaders httpHeaders = new HttpHeaders();
-        httpHeaders.set("Accept", MediaType.APPLICATION_JSON_VALUE);
-        httpHeaders.setContentType(MediaType.APPLICATION_JSON);
-
-        // Insert Security Request into the headers
-        try {
-
-            Set<AuthorizationCredentials> authorizationCredentialsSet = new HashSet<>();
-            Map<String, AAM> availableAAMs = securityHandler.getAvailableAAMs();
-
-            log.info("Getting certificate for " + availableAAMs.get(platformId).getAamInstanceId());
-            securityHandler.getCertificate(availableAAMs.get(platformId), username, password, clientId);
-
-            log.info("Getting token from " + availableAAMs.get(platformId).getAamInstanceId());
-            Token homeToken = securityHandler.login(availableAAMs.get(platformId));
-
-            HomeCredentials homeCredentials = securityHandler.getAcquiredCredentials().get(platformId).homeCredentials;
             authorizationCredentialsSet.add(new AuthorizationCredentials(homeToken, homeCredentials.homeAAM, homeCredentials));
 
             SecurityRequest securityRequest = MutualAuthenticationHelper.getSecurityRequest(authorizationCredentialsSet, false);
@@ -326,7 +252,7 @@ public class Controller {
 
         ResponseEntity<?> responseEntity = null;
         try{
-            responseEntity = restTemplate.exchange(url, HttpMethod.GET, httpEntity, Object.class);
+            responseEntity = restTemplate.exchange(url, httpMethod, httpEntity, Object.class);
         } catch (Exception e) {
             e.printStackTrace();
             return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
@@ -345,7 +271,7 @@ public class Controller {
         boolean isServiceResponseVerified;
         try {
             isServiceResponseVerified = MutualAuthenticationHelper.isServiceResponseVerified(
-                    serviceResponse, securityHandler.getComponentCertificate(componentId, platformId));
+                    serviceResponse, securityHandler.getComponentCertificate(componentId, targetPlatformId));
         } catch (CertificateException | NoSuchAlgorithmException e) {
             e.printStackTrace();
             return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
