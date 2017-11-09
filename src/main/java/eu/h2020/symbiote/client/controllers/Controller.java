@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import eu.h2020.symbiote.client.model.SparqlQueryRequestWrapper;
-import eu.h2020.symbiote.core.ci.SparqlQueryRequest;
 import eu.h2020.symbiote.core.internal.CoreQueryRequest;
 import eu.h2020.symbiote.security.ClientSecurityHandlerFactory;
 import eu.h2020.symbiote.security.commons.SecurityConstants;
@@ -344,8 +343,8 @@ public class Controller {
         try {
             isServiceResponseVerified = MutualAuthenticationHelper.isServiceResponseVerified(
                     serviceResponse, securityHandler.getComponentCertificate(componentId, targetPlatformId));
-        } catch (CertificateException | NoSuchAlgorithmException e) {
-            e.printStackTrace();
+        } catch (CertificateException | NoSuchAlgorithmException | SecurityHandlerException e) {
+            log.warn("Exception during verifying service response", e);
             return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
@@ -418,8 +417,8 @@ public class Controller {
         try {
             isServiceResponseVerified = MutualAuthenticationHelper.isServiceResponseVerified(
                     serviceResponse, securityHandler.getComponentCertificate(componentId, targetPlatformId));
-        } catch (CertificateException | NoSuchAlgorithmException e) {
-            e.printStackTrace();
+        } catch (CertificateException | NoSuchAlgorithmException | SecurityHandlerException e) {
+            log.warn("Exception during verifying service response", e);
             return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
