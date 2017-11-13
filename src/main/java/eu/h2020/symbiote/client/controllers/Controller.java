@@ -126,11 +126,19 @@ public class Controller {
 
     @CrossOrigin
     @PostMapping("/register_to_PAAM")
-    public ResponseEntity<?> registerToPAAM(@RequestParam String platformId) {
+    public ResponseEntity<?> registerToPAAM(@RequestParam String platformId,
+                                            @RequestParam(required = false) String directAAMUrl) {
         log.info("Registering to PAAM: " + platformId);
         try {
-            Map<String, AAM> availableAAMs = securityHandler.getAvailableAAMs();
-            IAAMClient aamClient = new AAMClient(availableAAMs.get(platformId).getAamAddress());
+
+            Optional<String> opAAMUrl = Optional.ofNullable(directAAMUrl);
+            IAAMClient aamClient;
+            if (opAAMUrl.isPresent())
+                aamClient = new AAMClient(opAAMUrl.get());
+            else {
+                Map<String, AAM> availableAAMs = securityHandler.getAvailableAAMs();
+                aamClient = new AAMClient(availableAAMs.get(platformId).getAamAddress());
+            }
 
             UserManagementRequest userManagementRequest = new UserManagementRequest(new
                     Credentials(paamOwnerUsername, paamOwnerPassword),
