@@ -133,11 +133,14 @@ public class Controller {
 
             Optional<String> opAAMUrl = Optional.ofNullable(directAAMUrl);
             IAAMClient aamClient;
-            if (opAAMUrl.isPresent())
+            if (opAAMUrl.isPresent()) {
+                log.info("Registering to PAAM: " + platformId + " with url " + opAAMUrl.get());
                 aamClient = new AAMClient(opAAMUrl.get());
+            }
             else {
                 Map<String, AAM> availableAAMs = securityHandler.getAvailableAAMs();
                 aamClient = new AAMClient(availableAAMs.get(platformId).getAamAddress());
+                log.info("Registering to PAAM: " + platformId + " with url " + availableAAMs.get(platformId).getAamAddress());
             }
 
             UserManagementRequest userManagementRequest = new UserManagementRequest(new
