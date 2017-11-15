@@ -46,7 +46,7 @@ resourceUrl={https://{platform_interworking_interface_url}/rap/Sensors('resource
 ```
 
 * Set parameters by getting a home token and using the resource url. You have to POST
- to *"/set"* or *"/observations_with_home_token"*. The resource url you get by the previous 
+ to *"/set"*. The resource url you get by the previous 
 operation is the generic url. So, you have to append the OData operator. Then, to access the resource you have to submit 
 a POST url to *"/observations"* which has as a body the input message and the following 
 request parameters:
