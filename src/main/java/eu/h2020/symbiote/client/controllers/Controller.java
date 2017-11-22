@@ -265,11 +265,16 @@ public class Controller {
     @PostMapping("/set")
     public ResponseEntity<?> setResource(@RequestParam String resourceUrl,
                                          @RequestParam String platformId,
+                                         @RequestParam(value = "httpMethod", defaultValue = "PUT", 
+                                                 required = false) String httpMethod,
                                          @RequestBody String body ) {
 
         log.info("Getting observations for the resource with url " + resourceUrl +
                 " and platformId " + platformId);
-        return sendSETRequestAndVerifyResponse(HttpMethod.PUT, resourceUrl, platformId, platformId, body, "rap");
+        HttpMethod method = HttpMethod.PUT;
+        if(httpMethod.equalsIgnoreCase("post"))
+            method = HttpMethod.POST;
+        return sendSETRequestAndVerifyResponse(method, resourceUrl, platformId, platformId, body, "rap");
     }
 
     @CrossOrigin
