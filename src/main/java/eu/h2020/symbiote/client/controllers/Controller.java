@@ -269,7 +269,7 @@ public class Controller {
 
         log.info("Getting observations for the resource with url " + resourceUrl +
                 " and platformId " + platformId);
-        return sendSETRequestAndVerifyResponse(HttpMethod.PUT, resourceUrl, platformId, platformId, body, "rap");
+        return sendSETRequestAndVerifyResponse(HttpMethod.POST, resourceUrl, platformId, platformId, body, "rap");
     }
 
     @CrossOrigin
@@ -408,7 +408,7 @@ public class Controller {
 
         ResponseEntity<?> responseEntity = null;
         try{
-            responseEntity = restTemplate.exchange(url, httpMethod, httpEntity, Object.class);
+            responseEntity = restTemplate.exchange(url, httpMethod, httpEntity, String.class);
         } catch (Exception e) {
             e.printStackTrace();
             return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
