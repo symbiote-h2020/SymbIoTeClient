@@ -80,6 +80,7 @@ dependencies {
 
     // Spring
     compile('org.springframework.boot:spring-boot-starter-data-rest')
+    compile('commons-io:commons-io:2.4')
 
     // Test only
     testCompile('junit:junit:4.12')
