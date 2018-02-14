@@ -177,6 +177,7 @@ public class Controller {
                                    @RequestParam(value = "location_long", required = false) Double location_long,
                                    @RequestParam(value = "max_distance", required = false) Integer max_distance,
                                    @RequestParam(value = "observed_property", required = false) String[] observed_property,
+                                   @RequestParam(value = "observed_property_iri", required = false) String[] observed_property_iri,
                                    @RequestParam(value = "resource_type", required = false) String resource_type,
                                    @RequestParam(value = "should_rank", required = false) Boolean should_rank,
                                    @RequestParam String homePlatformId) {
@@ -201,7 +202,11 @@ public class Controller {
             queryRequest.setObserved_property(Arrays.asList(observed_property));
         }
 
-        String queryUrl = queryRequest.buildQuery(symbIoTeCoreUrl);
+        if (observed_property_iri != null) {
+            queryRequest.setObserved_property_iri(Arrays.asList(observed_property_iri));
+        }
+
+        String queryUrl = queryRequest.buildQuery(symbIoTeCoreUrl).replaceAll("#","%23");
         log.info("queryUrl = " + queryUrl);
 
         return sendRequestAndVerifyResponse(HttpMethod.GET, queryUrl, homePlatformId,
