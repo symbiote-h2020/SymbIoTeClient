@@ -146,7 +146,7 @@ public class Controller {
             UserManagementRequest userManagementRequest = new UserManagementRequest(new
                     Credentials(paamOwnerUsername, paamOwnerPassword),
                     new Credentials(username, password),
-                    new UserDetails(new Credentials(username, password), "", "icom@icom.com",
+                    new UserDetails(new Credentials(username, password), "icom@icom.com",
                             UserRole.USER, new HashMap<>(), new HashMap<>()),
                     OperationType.CREATE);
 
@@ -274,7 +274,7 @@ public class Controller {
 
         log.info("Getting observations for the resource with url " + resourceUrl +
                 " and platformId " + platformId);
-        return sendSETRequestAndVerifyResponse(HttpMethod.POST, resourceUrl, platformId, platformId, body, "rap");
+        return sendSETRequestAndVerifyResponse(HttpMethod.PUT, resourceUrl, platformId, platformId, body, "rap");
     }
 
     @CrossOrigin
