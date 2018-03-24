@@ -31,6 +31,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.util.Assert;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 
 import javax.net.ssl.HttpsURLConnection;
@@ -340,6 +342,9 @@ public class Controller {
         ResponseEntity<?> responseEntity = null;
         try{
             responseEntity = restTemplate.exchange(url, httpMethod, httpEntity, Object.class);
+        } catch(RestClientResponseException e) {
+            e.printStackTrace();
+            return new ResponseEntity<>(e.getMessage()  + "\nResponse from RAP:\n" + e.getResponseBodyAsString(), new HttpHeaders(), HttpStatus.valueOf(e.getRawStatusCode()));
         } catch (Exception e) {
             e.printStackTrace();
             return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
@@ -414,6 +419,9 @@ public class Controller {
         ResponseEntity<?> responseEntity = null;
         try{
             responseEntity = restTemplate.exchange(url, httpMethod, httpEntity, String.class);
+        } catch(RestClientResponseException e) {
+            e.printStackTrace();
+            return new ResponseEntity<>(e.getMessage()  + "\nResponse from RAP:\n" + e.getResponseBodyAsString(), new HttpHeaders(), HttpStatus.valueOf(e.getRawStatusCode()));
         } catch (Exception e) {
             e.printStackTrace();
             return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
