@@ -30,6 +30,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.util.Assert;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
@@ -215,6 +216,90 @@ public class Controller {
     }
 
     @CrossOrigin
+    @GetMapping("/queryStress")
+    public ResponseEntity<?> queryStress(@RequestParam(value = "platform_id", required = false) String platformId,
+                                   @RequestParam(value = "platform_name", required = false) String platformName,
+                                   @RequestParam(value = "owner", required = false) String owner,
+                                   @RequestParam(value = "name", required = false) String name,
+                                   @RequestParam(value = "id", required = false) String id,
+                                   @RequestParam(value = "description", required = false) String description,
+                                   @RequestParam(value = "location_name", required = false) String location_name,
+                                   @RequestParam(value = "location_lat", required = false) Double location_lat,
+                                   @RequestParam(value = "location_long", required = false) Double location_long,
+                                   @RequestParam(value = "max_distance", required = false) Integer max_distance,
+                                   @RequestParam(value = "observed_property", required = false) String[] observed_property,
+                                   @RequestParam(value = "observed_property_iri", required = false) String[] observed_property_iri,
+                                   @RequestParam(value = "resource_type", required = false) String resource_type,
+                                   @RequestParam(value = "should_rank", required = false) Boolean should_rank,
+                                         @RequestParam(value = "stress", required = true) Integer stress,
+                                   @RequestParam String homePlatformId) {
+
+        log.info("Searching for resources with token from platform " + homePlatformId);
+
+        CoreQueryRequest queryRequest = new CoreQueryRequest();
+        queryRequest.setPlatform_id(platformId);
+        queryRequest.setPlatform_name(platformName);
+        queryRequest.setOwner(owner);
+        queryRequest.setName(name);
+        queryRequest.setId(id);
+        queryRequest.setDescription(description);
+        queryRequest.setLocation_name(location_name);
+        queryRequest.setLocation_lat(location_lat);
+        queryRequest.setLocation_long(location_long);
+        queryRequest.setMax_distance(max_distance);
+        queryRequest.setResource_type(resource_type);
+        queryRequest.setShould_rank(should_rank);
+
+        if (observed_property != null) {
+            queryRequest.setObserved_property(Arrays.asList(observed_property));
+        }
+
+        if (observed_property_iri != null) {
+            queryRequest.setObserved_property_iri(Arrays.asList(observed_property_iri));
+        }
+
+        String queryUrl = queryRequest.buildQuery(symbIoTeCoreUrl).replaceAll("#","%23");
+        log.info("queryUrl = " + queryUrl);
+
+
+
+//        List<Thread> threads = new ArrayList<>();
+//
+//        for( int i = 0; i <= stress.intValue(); i++ ) {
+//            Thread t = new Thread("Runner"+i) {
+//                @Override
+//                public void run() {
+//                    System.out.println("["+name+"] starting");
+//                    long in = System.currentTimeMillis();
+//                    ResponseEntity<?> search = sendRequestAndVerifyResponse(HttpMethod.GET, queryUrl, homePlatformId,
+//                            SecurityConstants.CORE_AAM_INSTANCE_ID, "search");
+//                    System.out.println("["+name+"] finished with status " + search.getStatusCode() + " in "
+//                            + (System.currentTimeMillis() - in ) + " ms" );
+//
+//                }
+//            };
+//            threads.add(t);
+//        }
+//
+//
+//        long periodBetweenStartingRequest = 500;
+//
+//        Iterator<Thread> threadsIter = threads.iterator();
+//        while( threadsIter.hasNext() ) {
+//            threadsIter.next().run();
+//            try {
+//                Thread.sleep(periodBetweenStartingRequest);
+//            } catch (InterruptedException e) {
+//                e.printStackTrace();
+//            }
+//        }
+
+        return sendRequestAndVerifyResponseSress(HttpMethod.GET, queryUrl, homePlatformId,
+                SecurityConstants.CORE_AAM_INSTANCE_ID, "search",stress);
+
+    }
+
+    @CrossOrigin
     @PostMapping("/sparqlQuery")
     public ResponseEntity<?> sparqlQuery(@RequestBody SparqlQueryRequestWrapper sparqlQueryRequestWrapper) {
 
@@ -298,6 +383,118 @@ public class Controller {
     }
 
 
+    private ResponseEntity<?> sendRequestAndVerifyResponseSress(HttpMethod httpMethod, String url, String homePlatformId,
+                                                           String targetPlatformId, String componentId, Integer stress ) {
+
+        Map<String, String> securityRequestHeaders;
+        HttpHeaders httpHeaders = new HttpHeaders();
+        httpHeaders.set("Accept", MediaType.APPLICATION_JSON_VALUE);
+        httpHeaders.setContentType(MediaType.APPLICATION_JSON);
+
+        // Insert Security Request into the headers
+        try {
+
+            Set<AuthorizationCredentials> authorizationCredentialsSet = new HashSet<>();
+            Map<String, AAM> availableAAMs = securityHandler.getAvailableAAMs();
+
+            log.info("Getting certificate for " + availableAAMs.get(homePlatformId).getAamInstanceId());
+            securityHandler.getCertificate(availableAAMs.get(homePlatformId), username, password, clientId);
+
+            log.info("Getting token from " + availableAAMs.get(homePlatformId).getAamInstanceId());
+            Token homeToken = securityHandler.login(availableAAMs.get(homePlatformId));
+
+            HomeCredentials homeCredentials = securityHandler.getAcquiredCredentials().get(homePlatformId).homeCredentials;
+            authorizationCredentialsSet.add(new AuthorizationCredentials(homeToken, homeCredentials.homeAAM, homeCredentials));
+
+            SecurityRequest securityRequest = MutualAuthenticationHelper.getSecurityRequest(authorizationCredentialsSet, false);
+            securityRequestHeaders = securityRequest.getSecurityRequestHeaderParams();
+
+        } catch (SecurityHandlerException | ValidationException | JsonProcessingException | NoSuchAlgorithmException e) {
+            e.printStackTrace();
+            return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+
+        for (Map.Entry<String, String> entry : securityRequestHeaders.entrySet()) {
+            httpHeaders.add(entry.getKey(), entry.getValue());
+        }
+        log.info("request headers: " + httpHeaders);
+
+        HttpEntity<String> httpEntity = new HttpEntity<>(httpHeaders);
+
+        ResponseEntity<?> responseEntity = new ResponseEntity<Object>(HttpStatus.OK);
+
+        List<Thread> threads = new ArrayList<>();
+
+        for( int i = 0; i <= stress.intValue(); i++ ) {
+            Thread t = new Thread("Runner"+i) {
+                @Override
+                public void run() {
+                    System.out.println("["+getName()+"] starting");
+                    long in = System.currentTimeMillis();
+//                    ResponseEntity<?> search = sendRequestAndVerifyResponse(HttpMethod.GET, queryUrl, homePlatformId,
+//                            SecurityConstants.CORE_AAM_INSTANCE_ID, "search");
+
+                    try{
+                        ResponseEntity responseEntity = restTemplate.exchange(url, httpMethod, httpEntity, Object.class);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+
+                    System.out.println("["+getName()+"] finished with status " + responseEntity.getStatusCode() + " in "
+                            + (System.currentTimeMillis() - in ) + " ms" );
+
+                }
+            };
+            threads.add(t);
+        }
+
+
+        long periodBetweenStartingRequest = 200;
+
+        Iterator<Thread> threadsIter = threads.iterator();
+        while( threadsIter.hasNext() ) {
+            threadsIter.next().start();
+            try {
+                Thread.sleep(periodBetweenStartingRequest);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        return responseEntity;
+
+//        log.info("response = " + responseEntity!=null?responseEntity.toString().substring(0,Math.min(150,responseEntity.toString().length())) + "..."
+//                :"response entity is null");
+//        log.info("headers = " + responseEntity.getHeaders());
+//        log.info("body = " + responseEntity.getBody()!=null?
+//                responseEntity.getBody().toString().substring(0,Math.min(150,responseEntity.getBody().toString().length())) +"..."
+//                :"body is null");
+//
+//        String serviceResponse = responseEntity.getHeaders().get(SecurityConstants.SECURITY_RESPONSE_HEADER).get(0);
+//
+//        if (serviceResponse == null)
+//            return new ResponseEntity<>("The receiver was not authenticated", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+//
+//
+//        boolean isServiceResponseVerified;
+//        try {
+//            isServiceResponseVerified = MutualAuthenticationHelper.isServiceResponseVerified(
+//                    serviceResponse, securityHandler.getComponentCertificate(componentId, targetPlatformId));
+//        } catch (CertificateException | NoSuchAlgorithmException | SecurityHandlerException e) {
+//            log.warn("Exception during verifying service response", e);
+//            return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+//        }
+//
+//        if (isServiceResponseVerified) {
+//            return new ResponseEntity<>(responseEntity.getBody(), new HttpHeaders(), responseEntity.getStatusCode());
+//        } else {
+//            return new ResponseEntity<>("The service response is not verified", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
+//        }
+    }
+
+
+
     private ResponseEntity<?> sendRequestAndVerifyResponse(HttpMethod httpMethod, String url, String homePlatformId,
                                                            String targetPlatformId, String componentId) {
 
@@ -345,9 +542,12 @@ public class Controller {
             return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
-        log.info("response = " + responseEntity);
+        log.info("response = " + responseEntity!=null?responseEntity.toString().substring(0,Math.min(150,responseEntity.toString().length())) + "..."
+        :"response entity is null");
         log.info("headers = " + responseEntity.getHeaders());
-        log.info("body = " + responseEntity.getBody());
+        log.info("body = " + responseEntity.getBody()!=null?
+                responseEntity.getBody().toString().substring(0,Math.min(150,responseEntity.getBody().toString().length())) +"..."
+                :"body is null");
 
         String serviceResponse = responseEntity.getHeaders().get(SecurityConstants.SECURITY_RESPONSE_HEADER).get(0);
 

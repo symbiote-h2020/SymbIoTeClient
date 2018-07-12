@@ -29,16 +29,29 @@ public class SymbIoTeClientApplication {
         return symbIoTeCoreUrl.replaceAll("(/*)$", "");
     }
 
+//    @Bean
+//    public RestTemplate RestTemplate(LoggingInterceptor loggingInterceptor) {
+//        RestTemplate restTemplate = new RestTemplate();
+//
+//        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+//        BufferingClientHttpRequestFactory bufferingClientHttpRequestFactory = new BufferingClientHttpRequestFactory(requestFactory);
+//        requestFactory.setOutputStreaming(false);
+//        restTemplate.setRequestFactory(bufferingClientHttpRequestFactory);
+//
+//        restTemplate.setInterceptors(Arrays.asList(loggingInterceptor));
+//        return restTemplate;
+//    }
+
     @Bean
-    public RestTemplate RestTemplate(LoggingInterceptor loggingInterceptor) {
+    public RestTemplate RestTemplate() {
         RestTemplate restTemplate = new RestTemplate();
-        
+
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         BufferingClientHttpRequestFactory bufferingClientHttpRequestFactory = new BufferingClientHttpRequestFactory(requestFactory);
         requestFactory.setOutputStreaming(false);
         restTemplate.setRequestFactory(bufferingClientHttpRequestFactory);
-        
-        restTemplate.setInterceptors(Arrays.asList(loggingInterceptor));
+
         return restTemplate;
     }
+
 }
