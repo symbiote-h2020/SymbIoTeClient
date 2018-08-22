@@ -3,6 +3,7 @@ package eu.h2020.symbiote.client.controllers;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.javafx.binding.StringFormatter;
 import eu.h2020.symbiote.client.model.SparqlQueryRequestWrapper;
 import eu.h2020.symbiote.core.internal.CoreQueryRequest;
 import eu.h2020.symbiote.security.ClientSecurityHandlerFactory;
@@ -30,7 +31,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.util.Assert;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
@@ -42,6 +42,7 @@ import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.util.*;
+import java.util.concurrent.*;
 
 /**
  * @author Vasileios Glykantzis (ICOM)
@@ -258,43 +259,10 @@ public class Controller {
             queryRequest.setObserved_property_iri(Arrays.asList(observed_property_iri));
         }
 
-        String queryUrl = queryRequest.buildQuery(symbIoTeCoreUrl).replaceAll("#","%23");
-        log.info("queryUrl = " + queryUrl);
+//        String queryUrl = queryRequest.buildQuery(symbIoTeCoreUrl).replaceAll("#","%23");
+//        log.info("queryUrl = " + queryUrl);
 
-
-
-//        List<Thread> threads = new ArrayList<>();
-//
-//        for( int i = 0; i <= stress.intValue(); i++ ) {
-//            Thread t = new Thread("Runner"+i) {
-//                @Override
-//                public void run() {
-//                    System.out.println("["+name+"] starting");
-//                    long in = System.currentTimeMillis();
-//                    ResponseEntity<?> search = sendRequestAndVerifyResponse(HttpMethod.GET, queryUrl, homePlatformId,
-//                            SecurityConstants.CORE_AAM_INSTANCE_ID, "search");
-//                    System.out.println("["+name+"] finished with status " + search.getStatusCode() + " in "
-//                            + (System.currentTimeMillis() - in ) + " ms" );
-//
-//                }
-//            };
-//            threads.add(t);
-//        }
-//
-//
-//        long periodBetweenStartingRequest = 500;
-//
-//        Iterator<Thread> threadsIter = threads.iterator();
-//        while( threadsIter.hasNext() ) {
-//            threadsIter.next().run();
-//            try {
-//                Thread.sleep(periodBetweenStartingRequest);
-//            } catch (InterruptedException e) {
-//                e.printStackTrace();
-//            }
-//        }
-
-        return sendRequestAndVerifyResponseSress(HttpMethod.GET, queryUrl, homePlatformId,
+        return sendRequestAndVerifyResponseSress(HttpMethod.GET, queryRequest, homePlatformId,
                 SecurityConstants.CORE_AAM_INSTANCE_ID, "search",stress);
 
     }
@@ -383,7 +351,7 @@ public class Controller {
     }
 
 
-    private ResponseEntity<?> sendRequestAndVerifyResponseSress(HttpMethod httpMethod, String url, String homePlatformId,
+    private ResponseEntity<?> sendRequestAndVerifyResponseSress(HttpMethod httpMethod, CoreQueryRequest queryRequest, String homePlatformId,
                                                            String targetPlatformId, String componentId, Integer stress ) {
 
         Map<String, String> securityRequestHeaders;
@@ -421,48 +389,93 @@ public class Controller {
         log.info("request headers: " + httpHeaders);
 
         HttpEntity<String> httpEntity = new HttpEntity<>(httpHeaders);
+//
+//        ResponseEntity<?> responseEntity = new ResponseEntity<Object>(HttpStatus.OK);
 
-        ResponseEntity<?> responseEntity = new ResponseEntity<Object>(HttpStatus.OK);
 
-        List<Thread> threads = new ArrayList<>();
-
-        for( int i = 0; i <= stress.intValue(); i++ ) {
-            Thread t = new Thread("Runner"+i) {
-                @Override
-                public void run() {
-                    System.out.println("["+getName()+"] starting");
-                    long in = System.currentTimeMillis();
-//                    ResponseEntity<?> search = sendRequestAndVerifyResponse(HttpMethod.GET, queryUrl, homePlatformId,
-//                            SecurityConstants.CORE_AAM_INSTANCE_ID, "search");
-
-                    try{
-                        ResponseEntity responseEntity = restTemplate.exchange(url, httpMethod, httpEntity, Object.class);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-
-                    System.out.println("["+getName()+"] finished with status " + responseEntity.getStatusCode() + " in "
-                            + (System.currentTimeMillis() - in ) + " ms" );
-
-                }
-            };
-            threads.add(t);
+        List<Callable<QueryHttpResult>> tasks = new ArrayList<>();
+        //populate tasks list
+        for( int i = 0; i < stress.intValue(); i++ ) {
+            tasks.add(new QueryCallable("Runner"+i,httpMethod,queryRequest,httpEntity));
         }
 
+//        QueryCallable queryCallable = new QueryCallable("Runner" + i, httpMethod, queryRequest, httpEntity);
 
-        long periodBetweenStartingRequest = 200;
+        ExecutorService executorService = Executors.newFixedThreadPool(stress.intValue());
 
-        Iterator<Thread> threadsIter = threads.iterator();
-        while( threadsIter.hasNext() ) {
-            threadsIter.next().start();
-            try {
-                Thread.sleep(periodBetweenStartingRequest);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+//        executorService.submit(queryCallable);
+
+        long in = System.currentTimeMillis();
+        try {
+            List<Future<QueryHttpResult>> futures = executorService.invokeAll(tasks);
+
+            List<QueryHttpResult> resultList = new ArrayList<>(futures.size());
+
+            // Check for exceptions
+            for (Future<QueryHttpResult> future : futures) {
+                // Throws an exception if an exception was thrown by the task.
+                resultList.add(future.get());
             }
+
+            long out = System.currentTimeMillis();
+
+            //prepare results
+            OptionalLong maxTimer = resultList.stream().mapToLong(qRes -> qRes.getExecutionTime()).max();
+            OptionalLong minTimer = resultList.stream().mapToLong(qRes -> qRes.getExecutionTime()).min();
+            OptionalDouble avgTimer = resultList.stream().mapToLong(qRes -> qRes.getExecutionTime()).average();
+
+            resultList.stream().forEach(s -> System.out.println( "["+ s.getName() + "] finished in " + s.getExecutionTime() + " ms "));
+
+            System.out.println("All tasks finished in " + ( out - in ) + " ms | min " + minTimer.orElse(-1l) + " | max "
+                    + maxTimer.orElse(-1l) + " | avg " + avgTimer.orElse( -1.0) );
+
+
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
         }
 
-        return responseEntity;
+//        List<Thread> threads = new ArrayList<>();
+//
+//        for( int i = 0; i <= stress.intValue(); i++ ) {
+//            Thread t = new Thread("Runner"+i) {
+//                @Override
+//                public void run() {
+//                    System.out.println("["+getName()+"] starting");
+//                    long in = System.currentTimeMillis();
+////                    ResponseEntity<?> search = sendRequestAndVerifyResponse(HttpMethod.GET, queryUrl, homePlatformId,
+////                            SecurityConstants.CORE_AAM_INSTANCE_ID, "search");
+//
+//                    try{
+//                        ResponseEntity responseEntity = restTemplate.exchange(url, httpMethod, httpEntity, Object.class);
+//                    } catch (Exception e) {
+//                        e.printStackTrace();
+//                    }
+//
+//                    System.out.println("["+getName()+"] finished with status " + responseEntity.getStatusCode() + " in "
+//                            + (System.currentTimeMillis() - in ) + " ms" );
+//
+//                    return responseEntity;
+//                }
+//            };
+//            threads.add(t);
+//        }
+//
+//
+//        long periodBetweenStartingRequest = 200;
+//
+//        Iterator<Thread> threadsIter = threads.iterator();
+//        while( threadsIter.hasNext() ) {
+//            threadsIter.next().start();
+//            try {
+//                Thread.sleep(periodBetweenStartingRequest);
+//            } catch (InterruptedException e) {
+//                e.printStackTrace();
+//            }
+//        }
+
+        return new ResponseEntity<Object>("",HttpStatus.OK);
 
 //        log.info("response = " + responseEntity!=null?responseEntity.toString().substring(0,Math.min(150,responseEntity.toString().length())) + "..."
 //                :"response entity is null");
@@ -644,4 +657,84 @@ public class Controller {
             return new ResponseEntity<>("The service response is not verified", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+
+
+    private class QueryCallable implements Callable<QueryHttpResult> {
+
+
+        private final String name;
+        private final HttpMethod httpMethod;
+        private final CoreQueryRequest queryRequest;
+        private final HttpEntity<String> httpEntity;
+
+        public QueryCallable(String name, HttpMethod httpMethod, CoreQueryRequest queryRequest, HttpEntity<String> httpEntity ) {
+            this.name = name;
+            this.httpMethod = httpMethod;
+            this.queryRequest = queryRequest;
+            this.httpEntity = httpEntity;
+        }
+
+        @Override
+        public QueryHttpResult call() throws Exception {
+            System.out.println("["+this.name+"] starting");
+            long in = System.currentTimeMillis();
+//                    ResponseEntity<?> search = sendRequestAndVerifyResponse(HttpMethod.GET, queryUrl, homePlatformId,
+//                            SecurityConstants.CORE_AAM_INSTANCE_ID, "search");
+
+            //Randomize query request
+            String queryUrl = getRandomUrl( queryRequest );
+
+            ResponseEntity responseEntity = restTemplate.exchange(queryUrl, httpMethod, httpEntity, Object.class);
+
+            long executionTime = (System.currentTimeMillis() - in );
+
+            System.out.println("["+this.name+"] finished with status " + responseEntity.getStatusCode() + " in "
+                    + executionTime + " ms" );
+
+            return new QueryHttpResult(this.name,responseEntity,executionTime);
+        }
+
+        private String getRandomUrl( final CoreQueryRequest queryRequest ) {
+            CoreQueryRequest q = queryRequest.newInstance(queryRequest);
+            long randomizer = System.currentTimeMillis();
+            if( randomizer%4==1 ) {
+                System.out.println("Adding temperature to query");
+                q.setObserved_property(Arrays.asList("temperature"));
+            } else if ( randomizer%4==2) {
+                System.out.println("Adding humidity to query");
+                q.setObserved_property(Arrays.asList("humidity"));
+            } else if (randomizer%4==3) {
+                System.out.println("Adding platformName to query");
+                q.setPlatform_name("*i*");
+            }
+
+            return q.buildQuery(symbIoTeCoreUrl).replaceAll("#","%23");
+        }
+    }
+
+    private class QueryHttpResult {
+
+        private String name;
+        private final ResponseEntity responseEntity;
+        private final long executionTime;
+
+        public QueryHttpResult(String name, ResponseEntity responseEntity, long executionTime ) {
+            this.name = name;
+            this.responseEntity = responseEntity;
+            this.executionTime = executionTime;
+        }
+
+        public ResponseEntity getResponseEntity() {
+            return responseEntity;
+        }
+
+        public long getExecutionTime() {
+            return executionTime;
+        }
+
+        public String getName() {
+            return name;
+        }
+    }
+
 }
