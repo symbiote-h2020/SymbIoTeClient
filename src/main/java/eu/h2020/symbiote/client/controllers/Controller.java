@@ -11,6 +11,7 @@ import eu.h2020.symbiote.security.commons.SecurityConstants;
 import eu.h2020.symbiote.security.commons.Token;
 import eu.h2020.symbiote.security.commons.credentials.AuthorizationCredentials;
 import eu.h2020.symbiote.security.commons.credentials.HomeCredentials;
+import eu.h2020.symbiote.security.commons.enums.AccountStatus;
 import eu.h2020.symbiote.security.commons.enums.ManagementStatus;
 import eu.h2020.symbiote.security.commons.enums.OperationType;
 import eu.h2020.symbiote.security.commons.enums.UserRole;
@@ -148,8 +149,8 @@ public class Controller {
             UserManagementRequest userManagementRequest = new UserManagementRequest(new
                     Credentials(paamOwnerUsername, paamOwnerPassword),
                     new Credentials(username, password),
-                    new UserDetails(new Credentials(username, password), "", "icom@icom.com",
-                            UserRole.USER, new HashMap<>(), new HashMap<>()),
+                    new UserDetails(new Credentials(username, password), "icom@icom.com",
+                            UserRole.USER, AccountStatus.NEW, new HashMap<>(), new HashMap<>(),false,false),
                     OperationType.CREATE);
 
             try {
@@ -424,9 +425,9 @@ public class Controller {
             OptionalLong minTimer = resultList.stream().mapToLong(qRes -> qRes.getExecutionTime()).min();
             OptionalDouble avgTimer = resultList.stream().mapToLong(qRes -> qRes.getExecutionTime()).average();
 
-            resultList.stream().forEach(s -> System.out.println( "["+ s.getName() + "] finished in " + s.getExecutionTime() + " ms "));
+            resultList.stream().forEach(s -> log.debug( "["+ s.getName() + "] finished in " + s.getExecutionTime() + " ms "));
 
-            System.out.println("All tasks finished in " + ( out - in ) + " ms | min " + minTimer.orElse(-1l) + " | max "
+            log.debug("All tasks finished in " + ( out - in ) + " ms | min " + minTimer.orElse(-1l) + " | max "
                     + maxTimer.orElse(-1l) + " | avg " + avgTimer.orElse( -1.0) );
 
 
@@ -436,74 +437,7 @@ public class Controller {
             e.printStackTrace();
         }
 
-//        List<Thread> threads = new ArrayList<>();
-//
-//        for( int i = 0; i <= stress.intValue(); i++ ) {
-//            Thread t = new Thread("Runner"+i) {
-//                @Override
-//                public void run() {
-//                    System.out.println("["+getName()+"] starting");
-//                    long in = System.currentTimeMillis();
-////                    ResponseEntity<?> search = sendRequestAndVerifyResponse(HttpMethod.GET, queryUrl, homePlatformId,
-////                            SecurityConstants.CORE_AAM_INSTANCE_ID, "search");
-//
-//                    try{
-//                        ResponseEntity responseEntity = restTemplate.exchange(url, httpMethod, httpEntity, Object.class);
-//                    } catch (Exception e) {
-//                        e.printStackTrace();
-//                    }
-//
-//                    System.out.println("["+getName()+"] finished with status " + responseEntity.getStatusCode() + " in "
-//                            + (System.currentTimeMillis() - in ) + " ms" );
-//
-//                    return responseEntity;
-//                }
-//            };
-//            threads.add(t);
-//        }
-//
-//
-//        long periodBetweenStartingRequest = 200;
-//
-//        Iterator<Thread> threadsIter = threads.iterator();
-//        while( threadsIter.hasNext() ) {
-//            threadsIter.next().start();
-//            try {
-//                Thread.sleep(periodBetweenStartingRequest);
-//            } catch (InterruptedException e) {
-//                e.printStackTrace();
-//            }
-//        }
-
         return new ResponseEntity<Object>("",HttpStatus.OK);
-
-//        log.info("response = " + responseEntity!=null?responseEntity.toString().substring(0,Math.min(150,responseEntity.toString().length())) + "..."
-//                :"response entity is null");
-//        log.info("headers = " + responseEntity.getHeaders());
-//        log.info("body = " + responseEntity.getBody()!=null?
-//                responseEntity.getBody().toString().substring(0,Math.min(150,responseEntity.getBody().toString().length())) +"..."
-//                :"body is null");
-//
-//        String serviceResponse = responseEntity.getHeaders().get(SecurityConstants.SECURITY_RESPONSE_HEADER).get(0);
-//
-//        if (serviceResponse == null)
-//            return new ResponseEntity<>("The receiver was not authenticated", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
-//
-//
-//        boolean isServiceResponseVerified;
-//        try {
-//            isServiceResponseVerified = MutualAuthenticationHelper.isServiceResponseVerified(
-//                    serviceResponse, securityHandler.getComponentCertificate(componentId, targetPlatformId));
-//        } catch (CertificateException | NoSuchAlgorithmException | SecurityHandlerException e) {
-//            log.warn("Exception during verifying service response", e);
-//            return new ResponseEntity<>(e.getMessage(), new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
-//        }
-//
-//        if (isServiceResponseVerified) {
-//            return new ResponseEntity<>(responseEntity.getBody(), new HttpHeaders(), responseEntity.getStatusCode());
-//        } else {
-//            return new ResponseEntity<>("The service response is not verified", new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR);
-//        }
     }
 
 
@@ -523,7 +457,7 @@ public class Controller {
             Map<String, AAM> availableAAMs = securityHandler.getAvailableAAMs();
 
             log.info("Getting certificate for " + availableAAMs.get(homePlatformId).getAamInstanceId());
-            securityHandler.getCertificate(availableAAMs.get(homePlatformId), username, password, clientId);
+//            securityHandler.getCertificate(availableAAMs.get(homePlatformId), username, password, clientId);
 
             log.info("Getting token from " + availableAAMs.get(homePlatformId).getAamInstanceId());
             Token homeToken = securityHandler.login(availableAAMs.get(homePlatformId));
@@ -676,7 +610,7 @@ public class Controller {
 
         @Override
         public QueryHttpResult call() throws Exception {
-            System.out.println("["+this.name+"] starting");
+            log.debug("["+this.name+"] starting");
             long in = System.currentTimeMillis();
 //                    ResponseEntity<?> search = sendRequestAndVerifyResponse(HttpMethod.GET, queryUrl, homePlatformId,
 //                            SecurityConstants.CORE_AAM_INSTANCE_ID, "search");
@@ -688,7 +622,7 @@ public class Controller {
 
             long executionTime = (System.currentTimeMillis() - in );
 
-            System.out.println("["+this.name+"] finished with status " + responseEntity.getStatusCode() + " in "
+            log.debug("["+this.name+"] finished with status " + responseEntity.getStatusCode() + " in "
                     + executionTime + " ms" );
 
             return new QueryHttpResult(this.name,responseEntity,executionTime);
@@ -698,13 +632,13 @@ public class Controller {
             CoreQueryRequest q = queryRequest.newInstance(queryRequest);
             long randomizer = System.currentTimeMillis();
             if( randomizer%4==1 ) {
-                System.out.println("Adding temperature to query");
+                log.debug("Adding temperature to query");
                 q.setObserved_property(Arrays.asList("temperature"));
             } else if ( randomizer%4==2) {
-                System.out.println("Adding humidity to query");
+                log.debug("Adding humidity to query");
                 q.setObserved_property(Arrays.asList("humidity"));
             } else if (randomizer%4==3) {
-                System.out.println("Adding platformName to query");
+                log.debug("Adding platformName to query");
                 q.setPlatform_name("*i*");
             }
 
